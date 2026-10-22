@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>PG rent</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1c2430;--muted:#667085;--line:#e3e6eb;--accent:#2f6fed;--accent-t:#fff;--bad:#c62f3b;--ok:#1d7a4a}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d222a;--text:#e8ebf0;--muted:#98a1b0;--line:#2d343e;--accent:#6b9bff;--accent-t:#0e1520;--bad:#ff8a93;--ok:#58c88b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:440px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+h1{font-size:20px;margin:4px 0 12px}
+.amt{font-size:28px;font-weight:700;margin:2px 0}
+.meta{color:var(--muted);font-size:14px}
+button,.btn{font:inherit;display:block;width:100%;text-align:center;text-decoration:none;border:1px solid var(--line);background:var(--card);color:var(--text);padding:12px;border-radius:10px;cursor:pointer;margin-top:10px}
+.pri{background:var(--accent);color:var(--accent-t);border-color:var(--accent);font-weight:600}
+.chk{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:10px;margin-top:8px}
+.chk input{width:24px;height:24px;accent-color:var(--accent)}
+.dsel{display:flex;gap:6px;margin-top:6px}
+select{flex:1;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}
+.err{color:var(--bad);min-height:20px;margin-top:8px;font-size:14px}
+.ok{color:var(--ok);font-weight:600}
+.upi{display:flex;gap:8px;align-items:center;justify-content:space-between;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px;margin-top:8px;word-break:break-all}
+.upi button{width:auto;margin:0;padding:6px 12px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap" id="root"><div class="card meta">Loading…</div></div>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const inr=n=>'₹'+Number(n).toLocaleString('en-IN');
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmt=d=>{try{return new Date(d+'T00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}catch(e){return d}};
+const token=location.pathname.split('/').filter(Boolean).pop()||'';
+let info=null;
+
+async function api(method,body){
+  try{
+    const r=await fetch('/api/pay/'+encodeURIComponent(token),{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined});
+    let j={};try{j=await r.json()}catch(e){}
+    return{ok:r.ok,j};
+  }catch(e){return{ok:false,j:{error:'Network error. Please check your connection.'}}}
+}
+function initDate(){
+  const [d,m,y]=$('pdate').querySelectorAll('select'),now=new Date(),Y=now.getFullYear();
+  m.innerHTML=MON.map((n,i)=>`<option value="${i+1}">${n}</option>`).join('');
+  y.innerHTML=[Y,Y+1].map(v=>`<option>${v}</option>`).join('');
+  const fill=()=>{const keep=+d.value||1,n=new Date(+y.value,+m.value,0).getDate();
+    d.innerHTML=Array.from({length:n},(_,i)=>`<option>${i+1}</option>`).join('');d.value=Math.min(keep,n)};
+  m.onchange=y.onchange=fill;
+  const t=new Date(Date.now()+3*864e5);y.value=t.getFullYear();m.value=t.getMonth()+1;fill();d.value=t.getDate();
+}
+const pdateVal=()=>{const [d,m,y]=$('pdate').querySelectorAll('select');
+  return `${y.value}-${String(m.value).padStart(2,'0')}-${String(d.value).padStart(2,'0')}`};
+
+function render(){
+  const i=info,root=$('root');
+  const upiLink=`upi://pay?pa=${encodeURIComponent(i.upi)}&pn=${encodeURIComponent('PG Rent')}&am=${encodeURIComponent(i.rent)}&cu=INR&tn=${encodeURIComponent('PG rent '+i.room)}`;
+  const prev=i.response?(i.response.kind==='paid'?'You told the owner you have paid.':'You told the owner you will pay on '+fmt(i.response.date)+'.'):'';
+  root.innerHTML=`<div class="card"><h1>Hi ${esc(i.name)} 👋</h1>
+    <div class="meta">Rent for Room ${esc(i.room)}${i.dueDate?' · due '+fmt(i.dueDate):''}</div>
+    <div class="amt">${inr(i.rent)}</div>
+    ${i.upi?`<div class="upi"><span>UPI: <b>${esc(i.upi)}</b></span><button id="copy">Copy</button></div>
+    <a class="btn pri" href="${upiLink}">Pay with a UPI app</a>`:''}
+  </div>
+  <div class="card"><b>Let the owner know</b>
+    ${prev?`<p class="ok">${esc(prev)} You can change it below.</p>`:''}
+    <label class="chk"><input type="checkbox" id="paid"><span>I have paid</span></label>
+    <div id="when"><p class="meta" style="margin:12px 0 0">Not paid yet? Tell the owner the date you will pay:</p>
+      <div class="dsel" id="pdate"><select aria-label="Day"></select><select aria-label="Month"></select><select aria-label="Year"></select></div></div>
+    <div class="err" id="err"></div>
+    <button class="pri" id="send">Send to owner</button>
+  </div>`;
+  initDate();
+  $('paid').onchange=()=>{$('when').hidden=$('paid').checked};
+  if($('copy'))$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(i.upi);$('copy').textContent='Copied'}catch(e){$('copy').textContent='Select & copy'}};
+  $('send').onclick=submit;
+}
+async function submit(){
+  $('err').textContent='';
+  const body=$('paid').checked?{kind:'paid'}:{kind:'promise',date:pdateVal()};
+  $('send').disabled=true;
+  const r=await api('POST',body);
+  $('send').disabled=false;
+  if(!r.ok){$('err').textContent=r.j.error||'Something went wrong. Please try again.';return}
+  $('root').innerHTML=`<div class="card"><h1 class="ok">Thank you ✅</h1>
+    <p>${body.kind==='paid'?'The owner has been told that you have paid. They will confirm once the payment is received.':'The owner has been told you will pay on <b>'+esc(fmt(body.date))+'</b>.'}</p></div>`;
+}
+(async()=>{
+  const r=await api('GET');
+  if(!r.ok){$('root').innerHTML=`<div class="card"><h1>Link not valid</h1><p class="meta">${esc(r.j.error||'Please ask the owner for a new link.')}</p></div>`;return}
+  info=r.j;render();
+})();
+</script>
+</body>
+</html>

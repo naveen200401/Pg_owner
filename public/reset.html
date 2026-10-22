@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Reset password</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1c2430;--muted:#667085;--line:#e3e6eb;--accent:#2f6fed;--accent-t:#fff;--bad:#c62f3b;--ok:#1d7a4a}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d222a;--text:#e8ebf0;--muted:#98a1b0;--line:#2d343e;--accent:#6b9bff;--accent-t:#0e1520;--bad:#ff8a93;--ok:#58c88b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:400px;margin:6vh auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px}
+h1{font-size:20px;margin:0 0 8px}
+label{display:block;font-size:14px;color:var(--muted);margin-top:12px}
+input{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);margin-top:4px}
+button,.btn{font:inherit;display:block;width:100%;text-align:center;text-decoration:none;border:1px solid var(--accent);background:var(--accent);color:var(--accent-t);font-weight:600;padding:12px;border-radius:10px;cursor:pointer;margin-top:14px}
+.err{color:var(--bad);min-height:20px;margin-top:8px;font-size:14px}
+.ok{color:var(--ok)}
+.meta{color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap"><div class="card" id="box"></div></div>
+<script>
+const $=id=>document.getElementById(id);
+const token=(location.hash.match(/token=([A-Za-z0-9_-]+)/)||[])[1]||'';
+try{history.replaceState(null,'',location.pathname)}catch(e){}
+function form(err){
+  $('box').innerHTML=`<h1>Choose a new password</h1><p class="meta">At least 8 characters. Use something long that you do not use elsewhere.</p>
+  <label>New password<input type="password" id="p1" autocomplete="new-password"></label>
+  <label>Confirm new password<input type="password" id="p2" autocomplete="new-password"></label>
+  <div class="err">${err||''}</div><button id="go">Save new password</button>`;
+  $('go').onclick=submit;$('p2').onkeydown=e=>{if(e.key==='Enter')submit()};
+}
+async function submit(){
+  const a=$('p1').value,b=$('p2').value;
+  if(a.length<8)return form('Password must be at least 8 characters.');
+  if(a!==b)return form('The two passwords do not match.');
+  let r,j={};
+  try{r=await fetch('/api/auth/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:a})});j=await r.json().catch(()=>({}))}
+  catch(e){return form('Network error. Please check your connection.')}
+  if(!r.ok)return form(j.error||'Something went wrong. Please try again.');
+  $('box').innerHTML=`<h1 class="ok">Password changed ✅</h1><p>You can now log in with your new password. All other devices have been logged out.</p><a class="btn" href="/">Go to login</a>`;
+}
+if(!token)$('box').innerHTML=`<h1>Link not valid</h1><p class="meta">Open the link from the reset email again, or request a new one from the login page.</p><a class="btn" href="/">Back to login</a>`;
+else form('');
+</script>
+</body>
+</html>

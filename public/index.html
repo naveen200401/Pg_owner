@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PG Manager</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1c2430;--muted:#667085;--line:#e3e6eb;--accent:#2f6fed;--accent-t:#fff;--bad:#c62f3b;--badbg:#fdecee;--ok:#1d7a4a}
+@media (prefers-color-scheme:dark){:root{--bg:#14171c;--card:#1d222a;--text:#e8ebf0;--muted:#98a1b0;--line:#2d343e;--accent:#6b9bff;--accent-t:#0e1520;--bad:#ff8a93;--badbg:#3a1f23;--ok:#58c88b}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+[hidden]{display:none!important}
+.wrap{max-width:900px;margin:0 auto;padding:16px}
+h1,h2{margin:4px 0 2px}h1{font-size:22px}.sub{color:var(--muted);margin:0 0 14px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--text);padding:8px 12px;border-radius:8px;cursor:pointer}
+button.pri{background:var(--accent);color:var(--accent-t);border-color:var(--accent);font-weight:600}
+button.sm{padding:4px 8px;font-size:13px}button.full{width:100%;margin-top:10px}
+a{color:var(--accent)}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px}
+.tab{white-space:nowrap}.on{background:var(--accent)!important;color:var(--accent-t)!important;border-color:var(--accent)!important}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.rh{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.t{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+.t input[type=checkbox]{width:20px;height:20px;margin-top:2px;accent-color:var(--accent)}
+.ti{flex:1;min-width:0}.tn{font-weight:600}.meta{color:var(--muted);font-size:13px}
+.badge{font-size:12px;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.paid,.empty{color:var(--ok);border:1px solid var(--ok)}.unpaid{color:var(--bad);background:var(--badbg)}
+.soon{color:var(--muted);border:1px solid var(--line)}
+.add{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}.add input{flex:1;min-width:140px}
+input,select{font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);width:100%}
+.add select{width:auto}
+label{display:block;font-size:13px;color:var(--muted);margin-top:8px}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--text);width:min(92vw,380px)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dsel{display:flex;gap:6px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:560px}
+th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);font-size:14px}th{color:var(--muted)}
+.emptymsg{color:var(--muted);text-align:center;padding:16px}
+.total{font-weight:700;margin:10px 0 0}
+.remind{background:var(--badbg);color:var(--bad);border:1px solid var(--bad);border-radius:12px;padding:10px 12px;margin-bottom:12px}
+.remind.good{background:var(--card);color:var(--ok);border-color:var(--ok)}
+.remind select{margin-top:8px}
+.rrow{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;background:var(--card);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:8px}
+.sum{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.sum span{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:13px}
+.sum .ok{color:var(--ok);border-color:var(--ok)}
+#auth{max-width:380px;margin:8vh auto;padding:20px}
+.pfx{display:flex;gap:6px;align-items:center}.pfx span{color:var(--muted)}
+.err{color:var(--bad);font-size:13px;min-height:18px;margin-top:6px}
+.demo{background:var(--bg);border:1px dashed var(--line);border-radius:8px;padding:8px;margin:8px 0;font-size:13px}
+</style>
+</head>
+<body>
+
+<div class="card" id="auth" hidden></div>
+
+<div class="wrap" id="app" hidden>
+  <div class="top"><div><h1>🏠 PG Manager</h1><p class="sub">Logged in as <span id="who"></span> · <span id="saveMsg"></span></p></div>
+    <button class="sm" id="logout">Log out</button></div>
+
+  <div class="bar">
+    <button class="pri" id="getBtn">Get details</button>
+    <button id="resetBtn">Start new month</button>
+    <button id="upiBtn"></button>
+    <button id="setBtn">Reminder settings</button>
+    <button id="bkBtn">Backup</button>
+    <button id="rsBtn">Restore</button>
+    <input type="file" id="rsFile" accept="application/json,.json" hidden>
+  </div>
+
+  <div class="remind" id="remind" hidden></div>
+  <div class="card" id="summary" hidden></div>
+  <div class="card" id="panel" hidden></div>
+
+  <div class="tabs" id="tabs"></div>
+  <div class="add">
+    <input type="text" id="roomNo" placeholder="Room number (e.g. 101)" maxlength="12">
+    <select id="roomBeds" aria-label="Number of beds"></select>
+    <button class="pri" id="addRoom">Add room</button>
+  </div>
+  <div class="sum" id="fsum"></div>
+  <div id="rooms"></div>
+</div>
+
+<dialog id="dlg">
+  <b id="dtitle">Add tenant</b>
+  <label>Name<input type="text" id="fName"></label>
+  <label>Phone number<input type="tel" id="fPhone" placeholder="10-digit mobile number"></label>
+  <label>Rent (₹)<input type="number" id="fRent" min="0"></label>
+  <label>Advance / deposit (₹)<input type="number" id="fAdv" min="0" placeholder="0 if none"></label>
+  <label>Joined date<div class="dsel" id="fDate"><select></select><select></select><select></select></div></label>
+  <div class="err" id="fErr"></div>
+  <div class="bar" style="margin-top:10px"><button class="pri" id="tSave">Save</button><button id="tCancel">Cancel</button></div>
+</dialog>
+
+<dialog id="sdlg">
+  <b>Reminder settings</b>
+  <label>First reminder<select id="sFirst"><option value="7">7 days before due date</option><option value="3">3 days before due date</option><option value="0">On the due date</option><option value="-3">3 days after due date</option><option value="-7">7 days after due date</option></select></label>
+  <label>Then remind again every<select id="sRep"><option value="1">1 day</option><option value="2">2 days</option><option value="3">3 days</option><option value="5">5 days</option><option value="7">7 days</option></select></label>
+  <p class="meta">If a tenant gives a date to pay, reminders pause until that date. WhatsApp cannot be sent automatically: the app shows who to remind today and you tap Send.</p>
+  <div class="bar" style="margin-top:10px"><button class="pri" id="sSave">Save</button><button id="sCancel">Cancel</button></div>
+</dialog>
+
+<dialog id="vdlg">
+  <b>Vacate tenant</b>
+  <p id="vText" class="meta"></p>
+  <label>Vacating date<div class="dsel" id="vDate"><select></select><select></select><select></select></div></label>
+  <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="vRef" checked style="width:auto"> Advance refunded to tenant</label>
+  <div class="bar" style="margin-top:14px"><button class="pri" id="vOk">Confirm vacate</button><button id="vCancel">Cancel</button></div>
+</dialog>
+
+<script>
+const FLOORS=['G','A','B','C','D','E','F'];
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Math.random().toString(36).slice(2,10);
+const inr=n=>'₹'+Number(n).toLocaleString('en-IN');
+const fmt=d=>{try{return new Date(d+'T00:00').toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}catch(e){return d}};
+
+/* ---------- server API & saving ---------- */
+let state={rooms:[],past:[],settings:{first:7,repeat:3}},resp={},tok={},lastSig='',me=null,cur='G',target=null,vtarget=null,filt='all',remSel='all',ver=0,upi='viswanathreddy724@ybl';
+const setUpiLabel=()=>{$('upiBtn').textContent='UPI: '+upi};
+const setSaveMsg=t=>{$('saveMsg').textContent=t};
+async function api(method,url,body){
+  try{
+    const r=await fetch(url,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});
+    let j={};try{j=await r.json()}catch(e){}
+    return{ok:r.ok,status:r.status,j};
+  }catch(e){return{ok:false,status:0,j:{error:'Network error. Check your connection.'}}}
+}
+let saveTimer=null,saving=false,dirty=false;
+function save(){dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(flush,400);setSaveMsg('Saving…')}
+async function flush(){
+  if(saving){saveTimer=setTimeout(flush,300);return}
+  if(!dirty)return;
+  dirty=false;saving=true;
+  const r=await api('PUT','/api/data',{rooms:state.rooms,past:state.past,upi,settings:state.settings,version:ver});
+  saving=false;
+  if(r.ok){ver=r.j.version;setSaveMsg(dirty?'Saving…':'Saved ✓')}
+  else if(r.status===401){boot()}
+  else if(r.status===409){alert('This data was changed on another device. Loading the latest data.');dirty=false;await loadData();render();setSaveMsg('')}
+  else{dirty=true;setSaveMsg('Not saved. Retrying…');saveTimer=setTimeout(flush,5000)}
+}
+function migrate(){
+  state.past=state.past||[];
+  state.rooms.forEach(r=>{
+    const used=new Set(r.tenants.map(t=>t.bed).filter(Boolean));
+    r.tenants.forEach(t=>{if(!t.bed){let i=1;while(used.has(i))i++;t.bed=i;used.add(i)}});
+    r.beds=Math.max(r.beds||1,1,...r.tenants.map(t=>t.bed));
+  });
+}
+async function loadData(){
+  const r=await api('GET','/api/data');
+  if(!r.ok)throw new Error('load failed');
+  state.rooms=r.j.rooms||[];state.past=r.j.past||[];ver=r.j.version||0;
+  state.settings=Object.assign({first:7,repeat:3},r.j.settings||{});
+  if(r.j.upi)upi=r.j.upi;
+  migrate();
+}
+async function maybeImport(){
+  if(ver!==0||state.rooms.length)return;
+  let old=null;try{old=JSON.parse(localStorage.getItem('pg-data')||'null')}catch(e){}
+  if(old&&old.rooms&&old.rooms.length&&confirm('Found tenant data saved in this browser by the earlier version. Import it into your online account?')){
+    state.rooms=old.rooms;state.past=old.past||[];
+    try{const u=localStorage.getItem('pg-upi');if(u){upi=u;setUpiLabel()}}catch(e){}
+    migrate();save();try{localStorage.removeItem('pg-data')}catch(e){}
+  }
+}
+
+/* ---------- phone validation ---------- */
+function normPhone(v){let n=String(v).replace(/[\s\-()]/g,'');
+  if(/^\+91/.test(n))n=n.slice(3);else if(/^91\d{10}$/.test(n))n=n.slice(2);else if(/^0\d{10}$/.test(n))n=n.slice(1);return n}
+function phoneErr(raw){
+  if(!String(raw).trim())return 'Please enter a mobile number.';
+  const n=normPhone(raw);
+  if(/\D/.test(n))return 'Wrong phone number: use digits only.';
+  if(n.length!==10)return `Wrong phone number: enter 10 digits (you entered ${n.length}).`;
+  if(!/^[6-9]/.test(n))return 'Wrong phone number: mobile numbers start with 6, 7, 8 or 9.';
+  return '';
+}
+
+/* ---------- owner login (email + password, checked by the server) ---------- */
+let authErr='',busy=false,authEmail='';
+const emailOk=v=>/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
+let authMode='login',authNote='';
+function renderAuth(){
+  const a=$('auth');
+  if(authMode==='forgot'){
+    a.innerHTML=`<h2>🏠 PG Manager</h2><p class="sub">Reset your password</p>
+    <p class="meta">Enter the owner email. A reset link will be sent, valid for 30 minutes.</p>
+    <label>Email<input type="email" id="aEmail" autocomplete="username" value="${esc(authEmail)}" placeholder="you@example.com"></label>
+    <div class="err">${esc(authErr)}</div><div class="meta" style="color:var(--ok)">${esc(authNote)}</div>
+    <button class="pri full" id="aForgot">Send reset link</button>
+    <p class="meta"><a href="#" id="aBack">Back to login</a></p>`;
+    $('aForgot').onclick=forgot;
+    $('aEmail').onkeydown=e=>{if(e.key==='Enter')forgot()};
+    $('aBack').onclick=e=>{e.preventDefault();authMode='login';authErr='';authNote='';renderAuth()};
+    return;
+  }
+  a.innerHTML=`<h2>🏠 PG Manager</h2><p class="sub">Owner login</p>
+  <label>Email<input type="email" id="aEmail" autocomplete="username" value="${esc(authEmail)}" placeholder="you@example.com"></label>
+  <label>Password<input type="password" id="aPass" autocomplete="current-password"></label>
+  <div class="err">${esc(authErr)}</div><button class="pri full" id="aLogin">Log in</button>
+  <p class="meta"><a href="#" id="aFg">Forgot password?</a></p>`;
+  $('aLogin').onclick=login;
+  $('aEmail').onkeydown=$('aPass').onkeydown=e=>{if(e.key==='Enter')login()};
+  $('aFg').onclick=e=>{e.preventDefault();authMode='forgot';authErr='';authNote='';renderAuth()};
+}
+async function forgot(){
+  if(busy)return;
+  authEmail=$('aEmail').value.trim();
+  if(!emailOk(authEmail)){authErr='Enter a valid email address like name@example.com.';authNote='';return renderAuth()}
+  busy=true;
+  const r=await api('POST','/api/auth/forgot',{email:authEmail});
+  busy=false;
+  if(!r.ok){authErr=r.j.error||'Something went wrong. Please try again.';authNote='';return renderAuth()}
+  authErr='';authNote='If that email belongs to the owner, a reset link has been sent. It can take a minute; check spam too.';renderAuth();
+}
+async function login(){
+  if(busy)return;
+  authEmail=$('aEmail').value.trim();const pw=$('aPass').value;
+  if(!authEmail){authErr='Please enter your email address.';return renderAuth()}
+  if(!emailOk(authEmail)){authErr='Wrong email: enter a valid address like name@example.com.';return renderAuth()}
+  if(!pw){authErr='Please enter your password.';return renderAuth()}
+  busy=true;
+  const r=await api('POST','/api/auth/login',{email:authEmail,password:pw});
+  busy=false;
+  if(!r.ok){authErr=r.j.error||'Login failed. Please try again.';return renderAuth()}
+  authErr='';boot();
+}
+async function boot(){
+  const m=await api('GET','/api/me');
+  if(!m.ok){$('app').hidden=true;$('auth').hidden=false;if(m.status===0)authErr=m.j.error;renderAuth();return}
+  me=m.j;
+  try{await loadData()}catch(e){alert('Could not load your data. Please refresh the page.');return}
+  $('auth').hidden=true;$('app').hidden=false;
+  $('who').textContent=me.email;setUpiLabel();
+  await maybeImport();render();await syncLinks();await refreshResponses();
+}
+$('logout').onclick=async()=>{await flush();await api('POST','/api/logout');boot()};
+
+/* ---------- date dropdowns ---------- */
+function initDate(id,val){
+  const [d,m,y]=$(id).querySelectorAll('select'),now=new Date(),Y=now.getFullYear();
+  m.innerHTML=MON.map((n,i)=>`<option value="${i+1}">${n}</option>`).join('');
+  y.innerHTML='';for(let i=Y+1;i>=Y-15;i--)y.innerHTML+=`<option>${i}</option>`;
+  const fill=()=>{const keep=+d.value||1,n=new Date(+y.value,+m.value,0).getDate();
+    d.innerHTML=Array.from({length:n},(_,i)=>`<option>${i+1}</option>`).join('');d.value=Math.min(keep,n)};
+  m.onchange=y.onchange=fill;
+  const v=val?new Date(val+'T00:00'):now;y.value=v.getFullYear();m.value=v.getMonth()+1;fill();d.value=v.getDate();
+}
+function getDate(id){const [d,m,y]=$(id).querySelectorAll('select');
+  return `${y.value}-${String(m.value).padStart(2,'0')}-${String(d.value).padStart(2,'0')}`}
+
+/* ---------- due dates & reminders ---------- */
+const pad2=n=>String(n).padStart(2,'0');
+const isoOf=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const addDays=(iso,n)=>{const x=new Date(iso+'T00:00');x.setDate(x.getDate()+n);return isoOf(x)};
+const daysBetween=(a,b)=>Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/864e5);
+function dueInfo(t){
+  const now=new Date();now.setHours(0,0,0,0);
+  const day=new Date(t.joined+'T00:00').getDate();
+  const mk=(y,m)=>new Date(y,m,Math.min(day,new Date(y,m+1,0).getDate()));
+  const f=d=>d.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+  const cyc=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}`;
+  if(t.paid){const d=mk(now.getFullYear(),now.getMonth()+1);return{iso:isoOf(d),cycle:cyc(d),diff:Math.round((d-now)/864e5),text:'Next due '+f(d),cls:'soon'}}
+  const d=mk(now.getFullYear(),now.getMonth()),diff=Math.round((d-now)/864e5),b={iso:isoOf(d),cycle:cyc(d),diff};
+  if(diff<0)return{...b,text:`Due ${f(d)} · overdue by ${-diff} day${diff<-1?'s':''}`,cls:'unpaid'};
+  if(diff===0)return{...b,text:`Due today (${f(d)})`,cls:'unpaid'};
+  return{...b,text:`Due ${f(d)} · in ${diff} day${diff>1?'s':''}`,cls:'soon'};
+}
+function allRows(){const rows=[];
+  FLOORS.forEach(f=>state.rooms.filter(r=>r.floor===f).forEach(r=>r.tenants.forEach(t=>rows.push({f,r:r.no,...t}))));return rows}
+function findTenant(id){for(const r of state.rooms){const t=r.tenants.find(x=>x.id===id);if(t)return t}return null}
+
+/* Reminder schedule: first reminder N days before the due date (default 7), then every M days (default 3).
+   A tenant's answer (paid / will pay on a date) pauses reminders. */
+function remInfo(t){
+  const d=dueInfo(t),today=isoOf(new Date()),S=state.settings;
+  const rr=t.rem&&t.rem.cycle===d.cycle?t.rem:{n:0,last:null};
+  const rp=resp[t.id]&&resp[t.id].cycle===d.cycle?resp[t.id]:null;
+  if(rp&&rp.kind==='paid')return{key:'claimed',text:'Says paid, please confirm',cls:'unpaid'};
+  if(rp&&rp.kind==='promise'&&rp.date>=today)return{key:'promised',text:'Will pay on '+fmt(rp.date),cls:'soon'};
+  const send=rr.n===0?d.diff<=S.first:daysBetween(rr.last,today)>=S.repeat;
+  if(send)return{key:'send',text:rr.n?`Remind again (last ${fmt(rr.last)})`:'Send first reminder',cls:'unpaid'};
+  const nxt=rr.n===0?addDays(d.iso,-S.first):addDays(rr.last,S.repeat);
+  return{key:'wait',text:'Next reminder '+fmt(nxt),cls:'soon'};
+}
+function waLink(x){
+  let n=normPhone(x.phone);if(n.length===10)n='91'+n;
+  const d=dueInfo(x).text,due=d.includes(' · ')?d.replace(' · ',' (')+')':d;
+  let msg=`Hi ${x.name}, this is a gentle reminder that your PG rent of ${inr(x.rent)} (Room ${x.f}-${x.r}) is pending. ${due}. Please pay ${inr(x.rent)} via UPI to ${upi} at the earliest. Thank you.`;
+  if(tok[x.id])msg+=`\n\nAlready paid, or want to tell us the date you will pay? Tap here: ${location.origin}/pay/${tok[x.id]}`;
+  return 'https://wa.me/'+n+'?text='+encodeURIComponent(msg);
+}
+function remRow(x){
+  const d=dueInfo(x),ri=x.ri;
+  const act=ri.key==='claimed'
+    ?`<button class="sm pri" data-confirm="${x.id}">Confirm paid</button> <button class="sm" data-reject="${x.id}">Not received</button>`
+    :`<a href="${waLink(x)}" data-rem="${x.id}" target="_blank" rel="noopener">${ri.key==='send'?'Send on WhatsApp':'Remind now'}</a>`;
+  return `<div class="rrow"><div><b>${esc(x.name)}</b> <span class="meta">(${x.f}-${esc(x.r)}, bed ${x.bed})</span>
+  <div class="meta">${esc(x.phone)} · ${inr(x.rent)} · Joined ${fmt(x.joined)}</div>
+  <div style="margin-top:4px"><span class="badge ${d.cls}">${d.text}</span> <span class="badge ${ri.cls}">${ri.text}</span></div></div>
+  <div>${act}</div></div>`}
+function renderRemind(){
+  const all=allRows(),el=$('remind');
+  if(!all.length){el.hidden=true;return}
+  el.hidden=false;
+  const un=all.filter(x=>!x.paid).map(x=>({...x,ri:remInfo(x)}));
+  if(!un.length){el.className='remind good';el.innerHTML='✅ All tenants have paid rent.';return}
+  const ord={claimed:0,send:1,wait:2,promised:3};
+  un.sort((a,b)=>ord[a.ri.key]-ord[b.ri.key]||dueInfo(a).diff-dueInfo(b).diff);
+  el.className='remind';
+  if(remSel!=='all'&&remSel!=='send'&&!un.some(x=>x.id===remSel))remSel='all';
+  const od=un.filter(x=>dueInfo(x).diff<0).length,ns=un.filter(x=>x.ri.key==='send').length,nc=un.filter(x=>x.ri.key==='claimed').length;
+  const shown=remSel==='all'?un:remSel==='send'?un.filter(x=>x.ri.key==='send'):un.filter(x=>x.id===remSel);
+  el.innerHTML=`<div>⏰ <b>Reminder:</b> ${un.length} unpaid${od?` (${od} overdue)`:''} · <b>${ns}</b> to remind today${nc?` · <b>${nc}</b> say they have paid`:''}</div>
+  <select id="remSel" aria-label="Unpaid tenants"><option value="all" ${remSel==='all'?'selected':''}>All unpaid tenants (${un.length})</option>
+  <option value="send" ${remSel==='send'?'selected':''}>To remind today (${ns})</option>
+  ${un.map(x=>`<option value="${x.id}" ${x.id===remSel?'selected':''}>${esc(x.name)} · ${x.f}-${esc(x.r)} · ${x.ri.text}</option>`).join('')}</select>
+  <div>${shown.length?shown.map(remRow).join(''):'<div class="meta" style="margin-top:8px">No reminders due today.</div>'}</div>`;
+  $('remSel').onchange=e=>{remSel=e.target.value;renderRemind()};
+}
+
+function renderSummary(){
+  const el=$('summary'),rows=allRows();
+  if(!rows.length){el.hidden=true;return}
+  el.hidden=false;
+  const sum=a=>a.reduce((t,x)=>t+Number(x.rent),0);
+  const line=(label,rs)=>{const un=rs.filter(x=>!x.paid);
+    return{label,n:rs.length,paid:sum(rs.filter(x=>x.paid)),due:sum(un),od:sum(un.filter(x=>dueInfo(x).diff<0)),total:sum(rs)}};
+  const fl=FLOORS.map(f=>line(f==='G'?'G (Ground)':f,rows.filter(x=>x.f===f))).filter(l=>l.n);
+  const all=line('Total',rows),pct=all.total?Math.round(all.paid/all.total*100):0;
+  const tr=(l,b)=>`<tr${b?' style="font-weight:700"':''}><td>${l.label}</td><td>${l.n}</td><td style="color:var(--ok)">${inr(l.paid)}</td>
+    <td style="color:var(--bad)">${inr(l.due)}${l.od?`<div class="meta">${inr(l.od)} overdue</div>`:''}</td><td>${inr(l.total)}</td></tr>`;
+  el.innerHTML=`<div class="rh"><b>Rent summary (this month)</b><span class="meta">Collected ${pct}%</span></div>
+  <div class="scroll"><table style="min-width:420px"><tr><th>Floor</th><th>Tenants</th><th>Paid</th><th>To be paid</th><th>Total rent</th></tr>
+  ${fl.map(l=>tr(l)).join('')}${tr(all,true)}</table></div>`;
+}
+
+/* ---------- tenant pay links & answers ---------- */
+async function syncLinks(){
+  const items=allRows().filter(x=>!x.paid).map(x=>{const d=dueInfo(x);
+    return{tenantId:x.id,name:x.name,room:x.f+'-'+x.r,rent:x.rent,dueDate:d.iso,cycle:d.cycle,upi}});
+  const sig=JSON.stringify(items);
+  if(!items.length||sig===lastSig)return;
+  lastSig=sig;
+  const r=await api('POST','/api/links',{items});
+  if(!r.ok){lastSig='';return}
+  tok=Object.assign(tok,r.j.tokens);
+  renderRemind();if(!$('panel').hidden)showDetails();
+}
+async function refreshResponses(){
+  const r=await api('GET','/api/responses');
+  if(!r.ok)return;
+  const m={};r.j.responses.forEach(x=>{m[x.tenantId]=x});
+  if(JSON.stringify(m)===JSON.stringify(resp))return;
+  resp=m;render();
+}
+async function clearResp(id){delete resp[id];await api('DELETE','/api/responses/'+encodeURIComponent(id))}
+function markReminded(id){
+  const t=findTenant(id);if(!t)return;
+  const d=dueInfo(t),rr=t.rem&&t.rem.cycle===d.cycle?t.rem:{n:0};
+  t.rem={n:(rr.n||0)+1,last:isoOf(new Date()),cycle:d.cycle};
+  save();setTimeout(render,150);
+}
+document.addEventListener('click',e=>{
+  const a=e.target.closest('a[data-rem]');if(a){markReminded(a.dataset.rem);return}
+  const c=e.target.closest('[data-confirm]');
+  if(c){const t=findTenant(c.dataset.confirm);if(t){t.paid=true;save();clearResp(t.id);render()}return}
+  const x=e.target.closest('[data-reject]');if(x){clearResp(x.dataset.reject);render()}
+});
+setInterval(()=>{if(!$('app').hidden)refreshResponses()},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('app').hidden)refreshResponses()});
+
+/* ---------- details panel ---------- */
+function showDetails(){
+  const rows=allRows(),p=$('panel');p.hidden=false;
+  const un=rows.filter(x=>!x.paid),pd=rows.filter(x=>x.paid);
+  const list=filt==='paid'?pd:filt==='unpaid'?un:rows;
+  const sum=a=>a.reduce((t,x)=>t+Number(x.rent),0);
+  const tb=state.rooms.reduce((a,r)=>a+r.beds,0),emp=[];
+  FLOORS.forEach(f=>state.rooms.filter(r=>r.floor===f).forEach(r=>{for(let b=1;b<=r.beds;b++)if(!r.tenants.some(t=>t.bed===b))emp.push(`${f}-${esc(r.no)} bed ${b}`)}));
+  p.innerHTML=`<div class="rh"><b>Tenant details (${rows.length})</b><button class="sm" id="hideU">Close</button></div>
+  <div class="bar">${[['all','All'],['paid','Paid'],['unpaid','Unpaid']].map(([k,l])=>`<button class="sm ${filt===k?'on':''}" data-flt="${k}">${l}</button>`).join('')}</div>
+  <div class="sum"><span>Paid: ${pd.length} · ${inr(sum(pd))}</span><span>Unpaid: ${un.length} · ${inr(sum(un))}</span>
+  <span>Beds: ${tb}</span><span>Occupied: ${rows.length}</span><span class="ok">Empty: ${emp.length}</span><span>Advance held: ${inr(rows.reduce((a,x)=>a+Number(x.advance||0),0))}</span></div>
+  ${list.length?`<div class="scroll"><table><tr><th>Floor</th><th>Room</th><th>Bed</th><th>Name</th><th>Phone</th><th>Rent</th><th>Advance</th><th>Joined</th><th>Due</th><th>Status</th><th></th></tr>
+  ${list.map(x=>`<tr><td>${x.f}</td><td>${esc(x.r)}</td><td>${x.bed}</td><td>${esc(x.name)}</td><td><a href="tel:${esc(x.phone)}">${esc(x.phone)}</a></td><td>${inr(x.rent)}</td><td>${inr(x.advance||0)}</td><td>${fmt(x.joined)}</td><td>${dueInfo(x).text}</td>
+  <td><span class="badge ${x.paid?'paid':'unpaid'}">${x.paid?'Paid':'Unpaid'}</span></td><td>${x.paid?'':`<a href="${waLink(x)}" data-rem="${x.id}" target="_blank" rel="noopener">Remind</a>`}</td></tr>`).join('')}</table></div>`:'<div class="emptyMsg meta">No tenants to show.</div>'}
+  <p class="total">Total pending: ${inr(sum(un))}</p>
+  <p><b>Empty beds (${emp.length})</b><br><span class="meta">${emp.length?emp.join(' · '):'All beds are occupied.'}</span></p>
+  ${state.past.length?`<b>Vacated tenants</b><div class="scroll"><table><tr><th>Name</th><th>Phone</th><th>Room</th><th>Joined</th><th>Vacated</th><th>Advance</th></tr>
+  ${state.past.slice(0,10).map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.phone)}</td><td>${x.floor}-${esc(x.room)} bed ${x.bed}</td><td>${fmt(x.joined)}</td><td>${fmt(x.left)}</td><td>${inr(x.advance||0)} ${x.advance?(x.refunded?'(refunded)':'(not refunded)'):''}</td></tr>`).join('')}</table></div>`:''}`;
+  $('hideU').onclick=()=>p.hidden=true;
+  p.querySelectorAll('[data-flt]').forEach(b=>b.onclick=()=>{filt=b.dataset.flt;showDetails()});
+}
+
+/* ---------- floors, rooms, beds ---------- */
+function renderTabs(){
+  $('tabs').innerHTML=FLOORS.map(f=>{
+    const n=state.rooms.filter(r=>r.floor===f).reduce((a,r)=>a+r.tenants.filter(t=>!t.paid).length,0);
+    return `<button class="tab ${f===cur?'on':''}" data-f="${f}">${f==='G'?'G (Ground)':f}${n?` · ${n} due`:''}</button>`}).join('');
+  $('tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{cur=b.dataset.f;render()});
+}
+function renderRooms(){
+  const rs=state.rooms.filter(r=>r.floor===cur);
+  const tb=rs.reduce((a,r)=>a+r.beds,0),oc=rs.reduce((a,r)=>a+r.tenants.length,0);
+  $('fsum').innerHTML=rs.length?`<span>Beds: ${tb}</span><span>Occupied: ${oc}</span><span class="${tb-oc?'ok':''}">Empty: ${tb-oc}</span>`:'';
+  if(!rs.length){$('rooms').innerHTML=`<div class="emptyMsg">No rooms on floor ${cur} yet. Add a room above.</div>`;return}
+  $('rooms').innerHTML=rs.map(r=>{
+    const occ=r.tenants.length,lastFree=!r.tenants.some(t=>t.bed===r.beds)&&r.beds>1;
+    const beds=Array.from({length:r.beds},(_,i)=>{
+      const b=i+1,t=r.tenants.find(x=>x.bed===b);
+      return t?`<div class="t"><input type="checkbox" ${t.paid?'checked':''} data-pay="${r.id}|${t.id}" aria-label="Rent paid">
+        <div class="ti"><div class="tn">🛏 Bed ${b} · ${esc(t.name)} <span class="badge ${t.paid?'paid':'unpaid'}">${t.paid?'Paid':'Unpaid'}</span></div>
+        <div class="meta">${esc(t.phone)} · ${inr(t.rent)} · Advance ${inr(t.advance||0)} · Joined ${fmt(t.joined)}</div><div class="meta">${dueInfo(t).text}${t.paid?'':` · <span class="badge ${remInfo(t).cls}">${remInfo(t).text}</span>`}</div></div>
+        <button class="sm" data-vac="${r.id}|${t.id}">Vacate</button></div>`
+      :`<div class="t"><span>🛏</span><div class="ti"><span class="tn">Bed ${b}</span> <span class="badge empty">Empty</span></div>
+        <button class="sm" data-add="${r.id}|${b}">+ Tenant</button></div>`}).join('');
+    return `<div class="card"><div class="rh"><div><b>Room ${esc(r.no)}</b> <span class="meta">${occ}/${r.beds} beds occupied · ${r.beds-occ?r.beds-occ+' empty':'full'}</span></div>
+      <span><button class="sm" data-bed="${r.id}|1">+ Bed</button> ${lastFree?`<button class="sm" data-bed="${r.id}|-1">− Bed</button> `:''}<button class="sm" data-delroom="${r.id}">Delete room</button></span></div>${beds}</div>`}).join('');
+  const q=s=>$('rooms').querySelectorAll(s),room=id=>state.rooms.find(r=>r.id===id);
+  q('[data-add]').forEach(b=>b.onclick=()=>{const[rid,bed]=b.dataset.add.split('|');target={rid,bed:+bed};
+    $('dtitle').textContent=`Add tenant · Room ${room(rid).no} · Bed ${bed}`;
+    ['fName','fPhone','fRent','fAdv'].forEach(i=>$(i).value='');$('fErr').textContent='';initDate('fDate');$('dlg').showModal()});
+  q('[data-vac]').forEach(b=>b.onclick=()=>{const[rid,tid]=b.dataset.vac.split('|');const r=room(rid),t=r.tenants.find(x=>x.id===tid);
+    vtarget={rid,tid};$('vText').textContent=`Vacate ${t.name} from Room ${r.no}, Bed ${t.bed}? The bed will be marked empty. Advance held: ${inr(t.advance||0)}.${t.paid?'':' Note: this month’s rent is still unpaid.'}`;
+    $('vRef').checked=true;initDate('vDate');$('vdlg').showModal()});
+  q('[data-pay]').forEach(c=>c.onchange=()=>{const[a,b]=c.dataset.pay.split('|');{const t=room(a).tenants.find(t=>t.id===b);t.paid=c.checked;if(c.checked&&resp[t.id])clearResp(t.id);save();render()}});
+  q('[data-bed]').forEach(b=>b.onclick=()=>{const[a,n]=b.dataset.bed.split('|');room(a).beds+=+n;save();render()});
+  q('[data-delroom]').forEach(b=>b.onclick=()=>{const r=room(b.dataset.delroom);
+    if(confirm(r.tenants.length?'This room has tenants. Delete the room and remove them?':'Delete this room?')){state.rooms=state.rooms.filter(x=>x.id!==r.id);save();render()}});
+}
+function render(){renderTabs();renderRooms();renderRemind();renderSummary();if(!$('panel').hidden)showDetails();syncLinks()}
+
+/* ---------- actions ---------- */
+for(let i=1;i<=8;i++)$('roomBeds').innerHTML+=`<option value="${i}" ${i===2?'selected':''}>${i} bed${i>1?'s':''}</option>`;
+$('bkBtn').onclick=()=>{
+  const blob=new Blob([JSON.stringify({rooms:state.rooms,past:state.past,upi,settings:state.settings,exported:new Date().toISOString()},null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pg-backup-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+$('rsBtn').onclick=()=>$('rsFile').click();
+$('rsFile').onchange=async e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  try{
+    const d=JSON.parse(await f.text());
+    if(!Array.isArray(d.rooms))throw new Error('bad');
+    if(!confirm('Replace ALL current data with this backup?'))return;
+    state.rooms=d.rooms;state.past=Array.isArray(d.past)?d.past:[];
+    if(d.settings&&typeof d.settings==='object')state.settings=Object.assign({first:7,repeat:3},d.settings);
+    if(typeof d.upi==='string'&&d.upi)upi=d.upi;
+    migrate();setUpiLabel();save();render();
+  }catch(err){alert('This file is not a valid PG Manager backup.')}
+};
+$('setBtn').onclick=()=>{$('sFirst').value=String(state.settings.first);$('sRep').value=String(state.settings.repeat);$('sdlg').showModal()};
+$('sCancel').onclick=()=>$('sdlg').close();
+$('sSave').onclick=()=>{state.settings={first:+$('sFirst').value,repeat:+$('sRep').value};$('sdlg').close();save();render()};
+$('upiBtn').onclick=()=>{
+  const v=prompt('Owner UPI ID used in rent reminders (e.g. name@ybl):',upi);
+  if(v===null)return;
+  const id=v.trim();
+  if(!/^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(id)){alert('Invalid UPI ID. It should look like name@bank.');return}
+  upi=id;setUpiLabel();save();render();
+};
+$('getBtn').onclick=()=>{filt='all';showDetails()};
+$('resetBtn').onclick=()=>{if(confirm('Mark all tenants as unpaid for a new month?')){state.rooms.forEach(r=>r.tenants.forEach(t=>t.paid=false));save();render()}};
+$('addRoom').onclick=()=>{
+  const no=$('roomNo').value.trim();if(!no)return;
+  if(state.rooms.some(r=>r.floor===cur&&r.no.toLowerCase()===no.toLowerCase())){alert('That room already exists on this floor.');return}
+  state.rooms.push({id:uid(),floor:cur,no,beds:+$('roomBeds').value,tenants:[]});$('roomNo').value='';save();render();
+};
+$('tCancel').onclick=()=>$('dlg').close();
+$('tSave').onclick=()=>{
+  const name=$('fName').value.trim(),raw=$('fPhone').value,rent=$('fRent').value,adv=$('fAdv').value;
+  let e='';
+  if(!name)e='Please enter the tenant name.';
+  else if(e=phoneErr(raw)){}
+  else if(rent===''||+rent<0)e='Please enter the rent amount.';
+  else if(adv!==''&&+adv<0)e='Advance cannot be negative.';
+  if(e){$('fErr').textContent=e;return}
+  const r=state.rooms.find(r=>r.id===target.rid);
+  r.tenants.push({id:uid(),bed:target.bed,name,phone:normPhone(raw),rent:+rent,advance:adv===''?0:+adv,joined:getDate('fDate'),paid:false});
+  $('dlg').close();save();render();
+};
+$('vCancel').onclick=()=>$('vdlg').close();
+$('vOk').onclick=()=>{
+  const r=state.rooms.find(r=>r.id===vtarget.rid),t=r.tenants.find(x=>x.id===vtarget.tid);
+  state.past.unshift({name:t.name,phone:t.phone,floor:r.floor,room:r.no,bed:t.bed,joined:t.joined,left:getDate('vDate'),advance:t.advance||0,refunded:$('vRef').checked});
+  r.tenants=r.tenants.filter(x=>x.id!==t.id);
+  $('vdlg').close();save();render();
+};
+boot();
+</script>
+</body>
+</html>
