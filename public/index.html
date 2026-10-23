@@ -248,7 +248,7 @@ $('logout').onclick=async()=>{await flush();await api('POST','/api/logout');boot
 function initDate(id,val){
   const [d,m,y]=$(id).querySelectorAll('select'),now=new Date(),Y=now.getFullYear();
   m.innerHTML=MON.map((n,i)=>`<option value="${i+1}">${n}</option>`).join('');
-  y.innerHTML='';for(let i=Y+1;i>=Y-15;i--)y.innerHTML+=`<option>${i}</option>`;
+  y.innerHTML='';const lo=val?Math.min(Y-15,+String(val).slice(0,4)):Y-15;for(let i=Y+1;i>=lo;i--)y.innerHTML+=`<option>${i}</option>`;
   const fill=()=>{const keep=+d.value||1,n=new Date(+y.value,+m.value,0).getDate();
     d.innerHTML=Array.from({length:n},(_,i)=>`<option>${i+1}</option>`).join('');d.value=Math.min(keep,n)};
   m.onchange=y.onchange=fill;
@@ -303,7 +303,7 @@ function remRow(x){
   const act=ri.key==='claimed'
     ?`<button class="sm pri" data-confirm="${x.id}">Confirm paid</button> <button class="sm" data-reject="${x.id}">Not received</button>`
     :`<a href="${waLink(x)}" data-rem="${x.id}" target="_blank" rel="noopener">${ri.key==='send'?'Send on WhatsApp':'Remind now'}</a>`;
-  return `<div class="rrow"><div><b>${esc(x.name)}</b> <span class="meta">(${x.f}-${esc(x.r)}, bed ${x.bed})</span>
+  return `<div class="rrow"><div><b>${esc(x.name)}</b> <span class="meta">(${x.f}-${esc(x.r)})</span>
   <div class="meta">${esc(x.phone)} · ${inr(x.rent)} · Joined ${fmt(x.joined)}</div>
   <div style="margin-top:4px"><span class="badge ${d.cls}">${d.text}</span> <span class="badge ${ri.cls}">${ri.text}</span></div></div>
   <div>${act}</div></div>`}
@@ -329,17 +329,19 @@ function renderRemind(){
 
 function renderSummary(){
   const el=$('summary'),rows=allRows();
-  if(!rows.length){el.hidden=true;return}
+  if(!state.rooms.length){el.hidden=true;return}
   el.hidden=false;
   const sum=a=>a.reduce((t,x)=>t+Number(x.rent),0);
-  const line=(label,rs)=>{const un=rs.filter(x=>!x.paid);
-    return{label,n:rs.length,paid:sum(rs.filter(x=>x.paid)),due:sum(un),od:sum(un.filter(x=>dueInfo(x).diff<0)),total:sum(rs)}};
-  const fl=FLOORS.map(f=>line(f==='G'?'G (Ground)':f,rows.filter(x=>x.f===f))).filter(l=>l.n);
-  const all=line('Total',rows),pct=all.total?Math.round(all.paid/all.total*100):0;
+  const line=(label,rs,beds)=>{const un=rs.filter(x=>!x.paid);
+    return{label,n:rs.length,paid:sum(rs.filter(x=>x.paid)),due:sum(un),od:sum(un.filter(x=>dueInfo(x).diff<0)),total:sum(rs),beds,vac:beds-rs.length}};
+  const bedsOf=f=>state.rooms.filter(r=>r.floor===f).reduce((a,r)=>a+r.beds,0);
+  const fl=FLOORS.map(f=>line(f==='G'?'G (Ground)':f,rows.filter(x=>x.f===f),bedsOf(f))).filter(l=>l.beds||l.n);
+  const all=line('Total',rows,state.rooms.reduce((a,r)=>a+r.beds,0)),pct=all.total?Math.round(all.paid/all.total*100):0;
   const tr=(l,b)=>`<tr${b?' style="font-weight:700"':''}><td>${l.label}</td><td>${l.n}</td><td style="color:var(--ok)">${inr(l.paid)}</td>
-    <td style="color:var(--bad)">${inr(l.due)}${l.od?`<div class="meta">${inr(l.od)} overdue</div>`:''}</td><td>${inr(l.total)}</td></tr>`;
-  el.innerHTML=`<div class="rh"><b>Rent summary (this month)</b><span class="meta">Collected ${pct}%</span></div>
-  <div class="scroll"><table style="min-width:420px"><tr><th>Floor</th><th>Tenants</th><th>Paid</th><th>To be paid</th><th>Total rent</th></tr>
+    <td style="color:var(--bad)">${inr(l.due)}${l.od?`<div class="meta">${inr(l.od)} overdue</div>`:''}</td><td>${inr(l.total)}</td>
+    <td>${l.beds}</td><td style="color:var(--ok);font-weight:700">${l.vac}</td></tr>`;
+  el.innerHTML=`<div class="rh"><b>Rent &amp; beds summary</b><span class="meta">Rent collected ${pct}% · <b style="color:var(--ok)">${all.vac} vacant bed${all.vac===1?'':'s'}</b></span></div>
+  <div class="scroll"><table style="min-width:560px"><tr><th>Floor</th><th>Tenants</th><th>Paid</th><th>To be paid</th><th>Total rent</th><th>Total beds</th><th>Vacant beds</th></tr>
   ${fl.map(l=>tr(l)).join('')}${tr(all,true)}</table></div>`;
 }
 
@@ -384,19 +386,20 @@ function showDetails(){
   const un=rows.filter(x=>!x.paid),pd=rows.filter(x=>x.paid);
   const list=filt==='paid'?pd:filt==='unpaid'?un:rows;
   const sum=a=>a.reduce((t,x)=>t+Number(x.rent),0);
-  const tb=state.rooms.reduce((a,r)=>a+r.beds,0),emp=[];
-  FLOORS.forEach(f=>state.rooms.filter(r=>r.floor===f).forEach(r=>{for(let b=1;b<=r.beds;b++)if(!r.tenants.some(t=>t.bed===b))emp.push(`${f}-${esc(r.no)} bed ${b}`)}));
+  const tb=state.rooms.reduce((a,r)=>a+r.beds,0),vf=[];
+  FLOORS.forEach(f=>{const rs=state.rooms.filter(r=>r.floor===f);if(rs.length)vf.push({f,v:rs.reduce((a,r)=>a+r.beds-r.tenants.length,0)})});
+  const vac=vf.reduce((a,x)=>a+x.v,0);
   p.innerHTML=`<div class="rh"><b>Tenant details (${rows.length})</b><button class="sm" id="hideU">Close</button></div>
   <div class="bar">${[['all','All'],['paid','Paid'],['unpaid','Unpaid']].map(([k,l])=>`<button class="sm ${filt===k?'on':''}" data-flt="${k}">${l}</button>`).join('')}</div>
   <div class="sum"><span>Paid: ${pd.length} · ${inr(sum(pd))}</span><span>Unpaid: ${un.length} · ${inr(sum(un))}</span>
-  <span>Beds: ${tb}</span><span>Occupied: ${rows.length}</span><span class="ok">Empty: ${emp.length}</span><span>Advance held: ${inr(rows.reduce((a,x)=>a+Number(x.advance||0),0))}</span></div>
-  ${list.length?`<div class="scroll"><table><tr><th>Floor</th><th>Room</th><th>Bed</th><th>Name</th><th>Phone</th><th>Rent</th><th>Advance</th><th>Joined</th><th>Due</th><th>Status</th><th></th></tr>
-  ${list.map(x=>`<tr><td>${x.f}</td><td>${esc(x.r)}</td><td>${x.bed}</td><td>${esc(x.name)}</td><td><a href="tel:${esc(x.phone)}">${esc(x.phone)}</a></td><td>${inr(x.rent)}</td><td>${inr(x.advance||0)}</td><td>${fmt(x.joined)}</td><td>${dueInfo(x).text}</td>
+  <span>Total beds: ${tb}</span><span>Occupied: ${rows.length}</span><span class="ok">Vacant beds: ${vac}</span><span>Advance held: ${inr(rows.reduce((a,x)=>a+Number(x.advance||0),0))}</span></div>
+  ${list.length?`<div class="scroll"><table><tr><th>Floor</th><th>Room</th><th>Name</th><th>Phone</th><th>Rent</th><th>Advance</th><th>Joined</th><th>Due</th><th>Status</th><th></th></tr>
+  ${list.map(x=>`<tr><td>${x.f}</td><td>${esc(x.r)}</td><td>${esc(x.name)}</td><td><a href="tel:${esc(x.phone)}">${esc(x.phone)}</a></td><td>${inr(x.rent)}</td><td>${inr(x.advance||0)}</td><td>${fmt(x.joined)}</td><td>${dueInfo(x).text}</td>
   <td><span class="badge ${x.paid?'paid':'unpaid'}">${x.paid?'Paid':'Unpaid'}</span></td><td>${x.paid?'':`<a href="${waLink(x)}" data-rem="${x.id}" target="_blank" rel="noopener">Remind</a>`}</td></tr>`).join('')}</table></div>`:'<div class="emptyMsg meta">No tenants to show.</div>'}
   <p class="total">Total pending: ${inr(sum(un))}</p>
-  <p><b>Empty beds (${emp.length})</b><br><span class="meta">${emp.length?emp.join(' · '):'All beds are occupied.'}</span></p>
+  <p><b>Vacant beds: ${vac}</b><br><span class="meta">${vac?vf.filter(x=>x.v).map(x=>`${x.f==='G'?'Ground':'Floor '+x.f}: ${x.v}`).join(' · '):'All beds are occupied.'}</span></p>
   ${state.past.length?`<b>Vacated tenants</b><div class="scroll"><table><tr><th>Name</th><th>Phone</th><th>Room</th><th>Joined</th><th>Vacated</th><th>Advance</th></tr>
-  ${state.past.slice(0,10).map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.phone)}</td><td>${x.floor}-${esc(x.room)} bed ${x.bed}</td><td>${fmt(x.joined)}</td><td>${fmt(x.left)}</td><td>${inr(x.advance||0)} ${x.advance?(x.refunded?'(refunded)':'(not refunded)'):''}</td></tr>`).join('')}</table></div>`:''}`;
+  ${state.past.slice(0,10).map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.phone)}</td><td>${x.floor}-${esc(x.room)}</td><td>${fmt(x.joined)}</td><td>${fmt(x.left)}</td><td>${inr(x.advance||0)} ${x.advance?(x.refunded?'(refunded)':'(not refunded)'):''}</td></tr>`).join('')}</table></div>`:''}`;
   $('hideU').onclick=()=>p.hidden=true;
   p.querySelectorAll('[data-flt]').forEach(b=>b.onclick=()=>{filt=b.dataset.flt;showDetails()});
 }
@@ -411,26 +414,31 @@ function renderTabs(){
 function renderRooms(){
   const rs=state.rooms.filter(r=>r.floor===cur);
   const tb=rs.reduce((a,r)=>a+r.beds,0),oc=rs.reduce((a,r)=>a+r.tenants.length,0);
-  $('fsum').innerHTML=rs.length?`<span>Beds: ${tb}</span><span>Occupied: ${oc}</span><span class="${tb-oc?'ok':''}">Empty: ${tb-oc}</span>`:'';
+  $('fsum').innerHTML=rs.length?`<span>Total beds: ${tb}</span><span>Occupied: ${oc}</span><span class="${tb-oc?'ok':''}">Vacant beds: ${tb-oc}</span>`:'';
   if(!rs.length){$('rooms').innerHTML=`<div class="emptyMsg">No rooms on floor ${cur} yet. Add a room above.</div>`;return}
   $('rooms').innerHTML=rs.map(r=>{
     const occ=r.tenants.length,lastFree=!r.tenants.some(t=>t.bed===r.beds)&&r.beds>1;
     const beds=Array.from({length:r.beds},(_,i)=>{
       const b=i+1,t=r.tenants.find(x=>x.bed===b);
       return t?`<div class="t"><input type="checkbox" ${t.paid?'checked':''} data-pay="${r.id}|${t.id}" aria-label="Rent paid">
-        <div class="ti"><div class="tn">🛏 Bed ${b} · ${esc(t.name)} <span class="badge ${t.paid?'paid':'unpaid'}">${t.paid?'Paid':'Unpaid'}</span></div>
+        <div class="ti"><div class="tn">🛏 ${esc(t.name)} <span class="badge ${t.paid?'paid':'unpaid'}">${t.paid?'Paid':'Unpaid'}</span></div>
         <div class="meta">${esc(t.phone)} · ${inr(t.rent)} · Advance ${inr(t.advance||0)} · Joined ${fmt(t.joined)}</div><div class="meta">${dueInfo(t).text}${t.paid?'':` · <span class="badge ${remInfo(t).cls}">${remInfo(t).text}</span>`}</div></div>
-        <button class="sm" data-vac="${r.id}|${t.id}">Vacate</button></div>`
-      :`<div class="t"><span>🛏</span><div class="ti"><span class="tn">Bed ${b}</span> <span class="badge empty">Empty</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="sm" data-edit="${r.id}|${t.id}">Edit</button> <button class="sm" data-vac="${r.id}|${t.id}">Vacate</button></div></div>`
+      :`<div class="t"><span>🛏</span><div class="ti"><span class="tn">Vacant bed</span> <span class="badge empty">Vacant</span></div>
         <button class="sm" data-add="${r.id}|${b}">+ Tenant</button></div>`}).join('');
-    return `<div class="card"><div class="rh"><div><b>Room ${esc(r.no)}</b> <span class="meta">${occ}/${r.beds} beds occupied · ${r.beds-occ?r.beds-occ+' empty':'full'}</span></div>
+    return `<div class="card"><div class="rh"><div><b>Room ${esc(r.no)}</b> <span class="meta">${occ} of ${r.beds} beds occupied · ${r.beds-occ?r.beds-occ+' vacant':'full'}</span></div>
       <span><button class="sm" data-bed="${r.id}|1">+ Bed</button> ${lastFree?`<button class="sm" data-bed="${r.id}|-1">− Bed</button> `:''}<button class="sm" data-delroom="${r.id}">Delete room</button></span></div>${beds}</div>`}).join('');
   const q=s=>$('rooms').querySelectorAll(s),room=id=>state.rooms.find(r=>r.id===id);
   q('[data-add]').forEach(b=>b.onclick=()=>{const[rid,bed]=b.dataset.add.split('|');target={rid,bed:+bed};
-    $('dtitle').textContent=`Add tenant · Room ${room(rid).no} · Bed ${bed}`;
+    $('dtitle').textContent=`Add tenant · Room ${room(rid).no}`;
     ['fName','fPhone','fRent','fAdv'].forEach(i=>$(i).value='');$('fErr').textContent='';initDate('fDate');$('dlg').showModal()});
+  q('[data-edit]').forEach(b=>b.onclick=()=>{const[rid,tid]=b.dataset.edit.split('|');const r=room(rid),t=r.tenants.find(x=>x.id===tid);
+    target={rid,bed:t.bed,tid};
+    $('dtitle').textContent=`Edit tenant · Room ${r.no}`;
+    $('fName').value=t.name;$('fPhone').value=t.phone;$('fRent').value=t.rent;$('fAdv').value=t.advance||0;
+    $('fErr').textContent='';initDate('fDate',t.joined);$('dlg').showModal()});
   q('[data-vac]').forEach(b=>b.onclick=()=>{const[rid,tid]=b.dataset.vac.split('|');const r=room(rid),t=r.tenants.find(x=>x.id===tid);
-    vtarget={rid,tid};$('vText').textContent=`Vacate ${t.name} from Room ${r.no}, Bed ${t.bed}? The bed will be marked empty. Advance held: ${inr(t.advance||0)}.${t.paid?'':' Note: this month’s rent is still unpaid.'}`;
+    vtarget={rid,tid};$('vText').textContent=`Vacate ${t.name} from Room ${r.no}? The bed will become vacant. Advance held: ${inr(t.advance||0)}.${t.paid?'':' Note: this month’s rent is still unpaid.'}`;
     $('vRef').checked=true;initDate('vDate');$('vdlg').showModal()});
   q('[data-pay]').forEach(c=>c.onchange=()=>{const[a,b]=c.dataset.pay.split('|');{const t=room(a).tenants.find(t=>t.id===b);t.paid=c.checked;if(c.checked&&resp[t.id])clearResp(t.id);save();render()}});
   q('[data-bed]').forEach(b=>b.onclick=()=>{const[a,n]=b.dataset.bed.split('|');room(a).beds+=+n;save();render()});
@@ -498,7 +506,11 @@ $('tSave').onclick=()=>{
   else if(adv!==''&&+adv<0)e='Advance cannot be negative.';
   if(e){$('fErr').textContent=e;return}
   const r=state.rooms.find(r=>r.id===target.rid);
-  r.tenants.push({id:uid(),bed:target.bed,name,phone:normPhone(raw),rent:+rent,advance:adv===''?0:+adv,joined:getDate('fDate'),paid:false});
+  const vals={name,phone:normPhone(raw),rent:+rent,advance:adv===''?0:+adv,joined:getDate('fDate')};
+  if(target.tid){
+    const t=r.tenants.find(x=>x.id===target.tid);
+    if(t)Object.assign(t,vals); // keeps bed, paid status, reminder history and pay link
+  }else r.tenants.push({id:uid(),bed:target.bed,...vals,paid:false});
   $('dlg').close();save();render();
 };
 $('vCancel').onclick=()=>$('vdlg').close();
