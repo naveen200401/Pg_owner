@@ -66,6 +66,7 @@ th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);font-size:
     <button id="resetBtn">Start new month</button>
     <button id="upiBtn"></button>
     <button id="setBtn">Reminder settings</button>
+    <button id="xlBtn" class="pri">Export Excel</button>
     <button id="bkBtn">Backup</button>
     <button id="rsBtn">Restore</button>
     <input type="file" id="rsFile" accept="application/json,.json" hidden>
@@ -440,6 +441,18 @@ function render(){renderTabs();renderRooms();renderRemind();renderSummary();if(!
 
 /* ---------- actions ---------- */
 for(let i=1;i<=8;i++)$('roomBeds').innerHTML+=`<option value="${i}" ${i===2?'selected':''}>${i} bed${i>1?'s':''}</option>`;
+$('xlBtn').onclick=async()=>{
+  const b=$('xlBtn');b.disabled=true;
+  try{
+    for(let i=0;i<40&&(dirty||saving);i++){if(dirty&&!saving)await flush();else await new Promise(r=>setTimeout(r,100))}
+    const r=await fetch('/api/export.xlsx',{credentials:'same-origin'});
+    if(!r.ok){alert(r.status===401?'Please log in again.':'Could not create the Excel file. Please try again.');if(r.status===401)boot();return}
+    const a=document.createElement('a');a.href=URL.createObjectURL(await r.blob());
+    a.download='pg-tenants-'+isoOf(new Date())+'.xlsx';
+    document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }catch(e){alert('Network error. Check your connection and try again.')}
+  finally{b.disabled=false}
+};
 $('bkBtn').onclick=()=>{
   const blob=new Blob([JSON.stringify({rooms:state.rooms,past:state.past,upi,settings:state.settings,exported:new Date().toISOString()},null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pg-backup-'+new Date().toISOString().slice(0,10)+'.json';
