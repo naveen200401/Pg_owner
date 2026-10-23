@@ -78,6 +78,119 @@ async function init(pool) {
 const isoDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(new Date(v + 'T00:00:00Z')) && new Date(v + 'T00:00:00Z').toISOString().slice(0, 10) === v;
 const TOKEN = /^[A-Za-z0-9_-]{20,64}$/;
 
+/* ---------- Excel export ---------- */
+const FLOORS = ['G', 'A', 'B', 'C', 'D', 'E', 'F'];
+const todayISO = (tz) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const utcDate = (iso) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || '')); return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null; };
+
+// Rent falls due on the same day of the month as the joining date (clamped to the month's length).
+function dueThisMonth(joined, today) {
+  const [y, m, td] = today.split('-').map(Number);
+  const day = Number(String(joined || '').slice(8, 10)) || 1;
+  const d = Math.min(day, new Date(Date.UTC(y, m, 0)).getUTCDate());
+  const overdue = Math.round((Date.UTC(y, m - 1, td) - Date.UTC(y, m - 1, d)) / 864e5);
+  return { date: new Date(Date.UTC(y, m - 1, d)), day, overdue };
+}
+
+async function buildWorkbook(data, today) {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'PG Manager';
+  wb.created = new Date();
+  const MONEY = '"₹"#,##0', DATE = 'dd-mmm-yyyy';
+  const rooms = (Array.isArray(data.rooms) ? data.rooms : []).slice().sort((a, b) =>
+    (FLOORS.indexOf(a.floor) - FLOORS.indexOf(b.floor)) || String(a.no).localeCompare(String(b.no), undefined, { numeric: true }));
+  const past = Array.isArray(data.past) ? data.past : [];
+
+  const sheet = (name, cols) => {
+    const ws = wb.addWorksheet(name, { views: [{ state: 'frozen', ySplit: 1 }] });
+    ws.columns = cols.map((c) => ({ header: c.h, key: c.k, width: c.w, style: c.fmt ? { numFmt: c.fmt } : {} }));
+    const head = ws.getRow(1);
+    head.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    head.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2F6FED' } };
+    head.alignment = { vertical: 'middle' };
+    return ws;
+  };
+  const colorStatus = (cell, paid) => { cell.font = { bold: true, color: { argb: paid ? 'FF1D7A4A' : 'FFC62F3B' } }; };
+
+  // 1. Tenants
+  const wt = sheet('Tenants', [
+    { h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 }, { h: 'Bed', k: 'bed', w: 6 },
+    { h: 'Name', k: 'name', w: 24 }, { h: 'Phone', k: 'phone', w: 15 },
+    { h: 'Monthly rent', k: 'rent', w: 14, fmt: MONEY }, { h: 'Advance', k: 'adv', w: 12, fmt: MONEY },
+    { h: 'Joined', k: 'joined', w: 14, fmt: DATE }, { h: 'Rent due day', k: 'day', w: 13 },
+    { h: 'Due date this month', k: 'due', w: 19, fmt: DATE }, { h: 'Rent status', k: 'status', w: 12 }, { h: 'Days overdue', k: 'od', w: 13 },
+  ]);
+  const perFloor = {}, emptyBeds = [];
+  for (const r of rooms) {
+    const tenants = (Array.isArray(r.tenants) ? r.tenants : []).slice().sort((a, b) => (a.bed || 0) - (b.bed || 0));
+    const f = (perFloor[r.floor] = perFloor[r.floor] || { n: 0, paid: 0, due: 0, beds: 0 });
+    f.beds += Number(r.beds) || 0;
+    for (const t of tenants) {
+      const d = dueThisMonth(t.joined, today), rent = Number(t.rent) || 0;
+      const row = wt.addRow({
+        floor: r.floor, room: String(r.no), bed: t.bed, name: String(t.name || ''), phone: String(t.phone || ''),
+        rent, adv: Number(t.advance) || 0, joined: utcDate(t.joined), day: d.day, due: d.date,
+        status: t.paid ? 'Paid' : 'Unpaid', od: !t.paid && d.overdue > 0 ? d.overdue : null,
+      });
+      row.getCell('phone').numFmt = '@';
+      colorStatus(row.getCell('status'), !!t.paid);
+      f.n += 1;
+      if (t.paid) f.paid += rent; else f.due += rent;
+    }
+    for (let b = 1; b <= (Number(r.beds) || 0); b++) if (!tenants.some((t) => t.bed === b)) emptyBeds.push({ floor: r.floor, room: String(r.no), bed: b });
+  }
+  wt.autoFilter = { from: 'A1', to: 'L1' };
+
+  // 2. Summary (floor-wise paid / to be paid / total)
+  const ws = sheet('Summary', [
+    { h: 'Floor', k: 'floor', w: 14 }, { h: 'Tenants', k: 'n', w: 10 }, { h: 'Paid', k: 'paid', w: 16, fmt: MONEY },
+    { h: 'To be paid', k: 'due', w: 16, fmt: MONEY }, { h: 'Total rent', k: 'total', w: 16, fmt: MONEY },
+    { h: 'Beds', k: 'beds', w: 8 }, { h: 'Empty beds', k: 'empty', w: 12 },
+  ]);
+  const used = FLOORS.filter((f) => perFloor[f]);
+  used.forEach((f, i) => {
+    const x = perFloor[f], rn = i + 2;
+    ws.addRow({
+      floor: f === 'G' ? 'G (Ground)' : f, n: x.n, paid: x.paid, due: x.due,
+      total: { formula: `C${rn}+D${rn}`, result: x.paid + x.due }, beds: x.beds, empty: { formula: `F${rn}-B${rn}`, result: x.beds - x.n },
+    });
+  });
+  if (used.length) {
+    const last = used.length + 1, tot = used.reduce((a, f) => ({ n: a.n + perFloor[f].n, paid: a.paid + perFloor[f].paid, due: a.due + perFloor[f].due, beds: a.beds + perFloor[f].beds }), { n: 0, paid: 0, due: 0, beds: 0 });
+    const row = ws.addRow({
+      floor: 'Total',
+      n: { formula: `SUM(B2:B${last})`, result: tot.n }, paid: { formula: `SUM(C2:C${last})`, result: tot.paid },
+      due: { formula: `SUM(D2:D${last})`, result: tot.due }, total: { formula: `SUM(E2:E${last})`, result: tot.paid + tot.due },
+      beds: { formula: `SUM(F2:F${last})`, result: tot.beds }, empty: { formula: `SUM(G2:G${last})`, result: tot.beds - tot.n },
+    });
+    row.font = { bold: true };
+    row.eachCell((c) => { c.border = { top: { style: 'thin' } }; });
+  }
+  ws.addRow([]);
+  ws.addRow([`Rent status is for the current month. Exported on ${today}.`]).font = { italic: true, color: { argb: 'FF667085' } };
+
+  // 3. Empty beds
+  const we = sheet('Empty beds', [{ h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 }, { h: 'Bed', k: 'bed', w: 6 }]);
+  emptyBeds.forEach((b) => we.addRow(b));
+
+  // 4. Vacated tenants
+  const wv = sheet('Vacated', [
+    { h: 'Name', k: 'name', w: 24 }, { h: 'Phone', k: 'phone', w: 15 }, { h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 },
+    { h: 'Bed', k: 'bed', w: 6 }, { h: 'Joined', k: 'joined', w: 14, fmt: DATE }, { h: 'Vacated', k: 'left', w: 14, fmt: DATE },
+    { h: 'Advance', k: 'adv', w: 12, fmt: MONEY }, { h: 'Advance refunded', k: 'ref', w: 17 },
+  ]);
+  past.forEach((x) => {
+    const row = wv.addRow({
+      name: String(x.name || ''), phone: String(x.phone || ''), floor: x.floor, room: String(x.room || ''), bed: x.bed,
+      joined: utcDate(x.joined), left: utcDate(x.left), adv: Number(x.advance) || 0, ref: Number(x.advance) ? (x.refunded ? 'Yes' : 'No') : '',
+    });
+    row.getCell('phone').numFmt = '@';
+  });
+
+  return wb.xlsx.writeBuffer();
+}
+
 function createApp(pool, cfg) {
   // The owner's login comes from OWNER_EMAIL / OWNER_PASSWORD. A password set with "Forgot password" is stored
   // (hashed) in the database and takes over, unless OWNER_PASSWORD is changed afterwards (the newest change wins).
@@ -323,6 +436,20 @@ function createApp(pool, cfg) {
     res.json({ ok: true });
   }));
 
+  /* ----- Excel download of all tenant data ----- */
+  app.get('/api/export.xlsx', auth, wrap(async (req, res) => {
+    const r = await pool.query('SELECT data FROM pg_owner_data WHERE owner_id = $1', [req.email]);
+    const data = r.rowCount ? r.rows[0].data : { rooms: [], past: [] };
+    const today = todayISO(cfg.tz || 'Asia/Kolkata');
+    const buf = await buildWorkbook(data, today);
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="pg-tenants-${today}.xlsx"`,
+      'Cache-Control': 'no-store',
+    });
+    res.send(Buffer.from(buf));
+  }));
+
   app.use(express.static(path.join(__dirname, 'public')));
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
   app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
@@ -333,7 +460,7 @@ function createApp(pool, cfg) {
   return app;
 }
 
-module.exports = { createApp, init, normEmail, emailOk };
+module.exports = { createApp, init, normEmail, emailOk, buildWorkbook, dueThisMonth };
 
 if (require.main === module) {
   const need = ['DATABASE_URL', 'OWNER_EMAIL', 'OWNER_PASSWORD', 'SESSION_SECRET'].filter((k) => !process.env[k]);
@@ -353,6 +480,7 @@ if (require.main === module) {
     publicUrl: process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '',
     resendKey: process.env.RESEND_API_KEY,
     mailFrom: process.env.MAIL_FROM,
+    tz: process.env.APP_TIMEZONE, // defaults to Asia/Kolkata
   });
   init(pool)
     .then(() => app.listen(process.env.PORT || 3000, () => console.log('PG Manager running')))
