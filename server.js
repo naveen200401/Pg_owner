@@ -113,8 +113,8 @@ async function buildWorkbook(data, today) {
   };
   const colorStatus = (cell, paid) => { cell.font = { bold: true, color: { argb: paid ? 'FF1D7A4A' : 'FFC62F3B' } }; };
 
-  // 1. Tenants
-  const wt = sheet('Tenants', [
+  // 1. Tenants & beds: every bed in room order. Occupied beds show the tenant, empty beds show "Vacant bed".
+  const wt = sheet('Tenants & beds', [
     { h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 },
     { h: 'Name', k: 'name', w: 24 }, { h: 'Phone', k: 'phone', w: 15 },
     { h: 'Monthly rent', k: 'rent', w: 14, fmt: MONEY }, { h: 'Advance', k: 'adv', w: 12, fmt: MONEY },
@@ -125,8 +125,26 @@ async function buildWorkbook(data, today) {
   for (const r of rooms) {
     const tenants = (Array.isArray(r.tenants) ? r.tenants : []).slice().sort((a, b) => (a.bed || 0) - (b.bed || 0));
     const f = (perFloor[r.floor] = perFloor[r.floor] || { n: 0, paid: 0, due: 0, beds: 0 });
-    f.beds += Number(r.beds) || 0;
-    for (const t of tenants) {
+    const nBeds = Number(r.beds) || 0;
+    f.beds += nBeds;
+    const slots = [], placed = new Set();
+    for (let b = 1; b <= nBeds; b++) {
+      const t = tenants.find((x) => x.bed === b);
+      if (t) { slots.push(t); placed.add(t); } else slots.push(null); // null = vacant bed
+    }
+    tenants.filter((t) => !placed.has(t)).forEach((t) => slots.push(t)); // safety: never drop a tenant
+    let vacHere = 0;
+    for (const t of slots) {
+      if (!t) {
+        vacHere += 1;
+        emptyBeds.push({ floor: r.floor, room: String(r.no) });
+        const row = wt.addRow({ floor: r.floor, room: String(r.no), name: 'Vacant bed', status: 'Vacant' });
+        row.font = { italic: true, color: { argb: 'FF667085' } };
+        const sc = row.getCell('status');
+        sc.font = { bold: true, color: { argb: 'FF1D7A4A' } };
+        sc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6F4EA' } };
+        continue;
+      }
       const d = dueThisMonth(t.joined, today), rent = Number(t.rent) || 0;
       const row = wt.addRow({
         floor: r.floor, room: String(r.no), name: String(t.name || ''), phone: String(t.phone || ''),
@@ -138,13 +156,11 @@ async function buildWorkbook(data, today) {
       f.n += 1;
       if (t.paid) f.paid += rent; else f.due += rent;
     }
-    const vac = [];
-    for (let b = 1; b <= (Number(r.beds) || 0); b++) {
-      if (!tenants.some((t) => t.bed === b)) { vac.push(b); emptyBeds.push({ floor: r.floor, room: String(r.no), bed: b }); }
-    }
-    roomRows.push({ floor: r.floor, room: String(r.no), beds: Number(r.beds) || 0, occ: tenants.length, vac: vac.length });
+    roomRows.push({ floor: r.floor, room: String(r.no), beds: nBeds, occ: tenants.length, vac: vacHere });
   }
   wt.autoFilter = { from: 'A1', to: 'K1' };
+  wt.addRow([]);
+  wt.addRow([`Total vacant beds: ${emptyBeds.length}`]).font = { bold: true, size: 12, color: { argb: 'FF1D7A4A' } };
 
   // 2. Summary (floor-wise paid / to be paid / total)
   const ws = sheet('Summary', [
