@@ -121,7 +121,7 @@ async function buildWorkbook(data, today) {
     { h: 'Joined', k: 'joined', w: 14, fmt: DATE }, { h: 'Rent due day', k: 'day', w: 13 },
     { h: 'Due date this month', k: 'due', w: 19, fmt: DATE }, { h: 'Rent status', k: 'status', w: 12 }, { h: 'Days overdue', k: 'od', w: 13 },
   ]);
-  const perFloor = {}, emptyBeds = [];
+  const perFloor = {}, emptyBeds = [], roomRows = [];
   for (const r of rooms) {
     const tenants = (Array.isArray(r.tenants) ? r.tenants : []).slice().sort((a, b) => (a.bed || 0) - (b.bed || 0));
     const f = (perFloor[r.floor] = perFloor[r.floor] || { n: 0, paid: 0, due: 0, beds: 0 });
@@ -138,7 +138,11 @@ async function buildWorkbook(data, today) {
       f.n += 1;
       if (t.paid) f.paid += rent; else f.due += rent;
     }
-    for (let b = 1; b <= (Number(r.beds) || 0); b++) if (!tenants.some((t) => t.bed === b)) emptyBeds.push({ floor: r.floor, room: String(r.no), bed: b });
+    const vac = [];
+    for (let b = 1; b <= (Number(r.beds) || 0); b++) {
+      if (!tenants.some((t) => t.bed === b)) { vac.push(b); emptyBeds.push({ floor: r.floor, room: String(r.no), bed: b }); }
+    }
+    roomRows.push({ floor: r.floor, room: String(r.no), beds: Number(r.beds) || 0, occ: tenants.length, vac: vac.length, nums: vac.join(', ') });
   }
   wt.autoFilter = { from: 'A1', to: 'L1' };
 
@@ -146,7 +150,7 @@ async function buildWorkbook(data, today) {
   const ws = sheet('Summary', [
     { h: 'Floor', k: 'floor', w: 14 }, { h: 'Tenants', k: 'n', w: 10 }, { h: 'Paid', k: 'paid', w: 16, fmt: MONEY },
     { h: 'To be paid', k: 'due', w: 16, fmt: MONEY }, { h: 'Total rent', k: 'total', w: 16, fmt: MONEY },
-    { h: 'Beds', k: 'beds', w: 8 }, { h: 'Empty beds', k: 'empty', w: 12 },
+    { h: 'Total beds', k: 'beds', w: 12 }, { h: 'Vacant beds', k: 'empty', w: 13 },
   ]);
   const used = FLOORS.filter((f) => perFloor[f]);
   used.forEach((f, i) => {
@@ -168,11 +172,30 @@ async function buildWorkbook(data, today) {
     row.eachCell((c) => { c.border = { top: { style: 'thin' } }; });
   }
   ws.addRow([]);
+  ws.addRow([`Total vacant beds: ${emptyBeds.length}`]).font = { bold: true, size: 12, color: { argb: 'FF1D7A4A' } };
   ws.addRow([`Rent status is for the current month. Exported on ${today}.`]).font = { italic: true, color: { argb: 'FF667085' } };
 
-  // 3. Empty beds
-  const we = sheet('Empty beds', [{ h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 }, { h: 'Bed', k: 'bed', w: 6 }]);
-  emptyBeds.forEach((b) => we.addRow(b));
+  // 3. Vacant beds, room by room
+  const we = sheet('Vacant beds', [
+    { h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 }, { h: 'Total beds', k: 'beds', w: 12 },
+    { h: 'Occupied', k: 'occ', w: 11 }, { h: 'Vacant beds', k: 'vac', w: 13 }, { h: 'Vacant bed numbers', k: 'nums', w: 20 },
+  ]);
+  roomRows.forEach((x, i) => {
+    const rn = i + 2;
+    const row = we.addRow({ floor: x.floor, room: x.room, beds: x.beds, occ: x.occ, vac: { formula: `C${rn}-D${rn}`, result: x.vac }, nums: x.nums });
+    if (x.vac > 0) row.getCell('vac').font = { bold: true, color: { argb: 'FF1D7A4A' } };
+  });
+  if (roomRows.length) {
+    const last = roomRows.length + 1;
+    const sum = (col, v) => ({ formula: `SUM(${col}2:${col}${last})`, result: v });
+    const row = we.addRow({
+      floor: 'Total', beds: sum('C', roomRows.reduce((a, x) => a + x.beds, 0)), occ: sum('D', roomRows.reduce((a, x) => a + x.occ, 0)),
+      vac: sum('E', emptyBeds.length),
+    });
+    row.font = { bold: true };
+    row.eachCell((c) => { c.border = { top: { style: 'thin' } }; });
+  }
+  we.autoFilter = { from: 'A1', to: 'F1' };
 
   // 4. Vacated tenants
   const wv = sheet('Vacated', [
