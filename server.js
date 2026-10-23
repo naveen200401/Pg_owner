@@ -115,7 +115,7 @@ async function buildWorkbook(data, today) {
 
   // 1. Tenants
   const wt = sheet('Tenants', [
-    { h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 }, { h: 'Bed', k: 'bed', w: 6 },
+    { h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 },
     { h: 'Name', k: 'name', w: 24 }, { h: 'Phone', k: 'phone', w: 15 },
     { h: 'Monthly rent', k: 'rent', w: 14, fmt: MONEY }, { h: 'Advance', k: 'adv', w: 12, fmt: MONEY },
     { h: 'Joined', k: 'joined', w: 14, fmt: DATE }, { h: 'Rent due day', k: 'day', w: 13 },
@@ -129,7 +129,7 @@ async function buildWorkbook(data, today) {
     for (const t of tenants) {
       const d = dueThisMonth(t.joined, today), rent = Number(t.rent) || 0;
       const row = wt.addRow({
-        floor: r.floor, room: String(r.no), bed: t.bed, name: String(t.name || ''), phone: String(t.phone || ''),
+        floor: r.floor, room: String(r.no), name: String(t.name || ''), phone: String(t.phone || ''),
         rent, adv: Number(t.advance) || 0, joined: utcDate(t.joined), day: d.day, due: d.date,
         status: t.paid ? 'Paid' : 'Unpaid', od: !t.paid && d.overdue > 0 ? d.overdue : null,
       });
@@ -142,9 +142,9 @@ async function buildWorkbook(data, today) {
     for (let b = 1; b <= (Number(r.beds) || 0); b++) {
       if (!tenants.some((t) => t.bed === b)) { vac.push(b); emptyBeds.push({ floor: r.floor, room: String(r.no), bed: b }); }
     }
-    roomRows.push({ floor: r.floor, room: String(r.no), beds: Number(r.beds) || 0, occ: tenants.length, vac: vac.length, nums: vac.join(', ') });
+    roomRows.push({ floor: r.floor, room: String(r.no), beds: Number(r.beds) || 0, occ: tenants.length, vac: vac.length });
   }
-  wt.autoFilter = { from: 'A1', to: 'L1' };
+  wt.autoFilter = { from: 'A1', to: 'K1' };
 
   // 2. Summary (floor-wise paid / to be paid / total)
   const ws = sheet('Summary', [
@@ -178,11 +178,11 @@ async function buildWorkbook(data, today) {
   // 3. Vacant beds, room by room
   const we = sheet('Vacant beds', [
     { h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 }, { h: 'Total beds', k: 'beds', w: 12 },
-    { h: 'Occupied', k: 'occ', w: 11 }, { h: 'Vacant beds', k: 'vac', w: 13 }, { h: 'Vacant bed numbers', k: 'nums', w: 20 },
+    { h: 'Occupied', k: 'occ', w: 11 }, { h: 'Vacant beds', k: 'vac', w: 13 },
   ]);
   roomRows.forEach((x, i) => {
     const rn = i + 2;
-    const row = we.addRow({ floor: x.floor, room: x.room, beds: x.beds, occ: x.occ, vac: { formula: `C${rn}-D${rn}`, result: x.vac }, nums: x.nums });
+    const row = we.addRow({ floor: x.floor, room: x.room, beds: x.beds, occ: x.occ, vac: { formula: `C${rn}-D${rn}`, result: x.vac } });
     if (x.vac > 0) row.getCell('vac').font = { bold: true, color: { argb: 'FF1D7A4A' } };
   });
   if (roomRows.length) {
@@ -195,17 +195,17 @@ async function buildWorkbook(data, today) {
     row.font = { bold: true };
     row.eachCell((c) => { c.border = { top: { style: 'thin' } }; });
   }
-  we.autoFilter = { from: 'A1', to: 'F1' };
+  we.autoFilter = { from: 'A1', to: 'E1' };
 
   // 4. Vacated tenants
   const wv = sheet('Vacated', [
     { h: 'Name', k: 'name', w: 24 }, { h: 'Phone', k: 'phone', w: 15 }, { h: 'Floor', k: 'floor', w: 8 }, { h: 'Room', k: 'room', w: 10 },
-    { h: 'Bed', k: 'bed', w: 6 }, { h: 'Joined', k: 'joined', w: 14, fmt: DATE }, { h: 'Vacated', k: 'left', w: 14, fmt: DATE },
+    { h: 'Joined', k: 'joined', w: 14, fmt: DATE }, { h: 'Vacated', k: 'left', w: 14, fmt: DATE },
     { h: 'Advance', k: 'adv', w: 12, fmt: MONEY }, { h: 'Advance refunded', k: 'ref', w: 17 },
   ]);
   past.forEach((x) => {
     const row = wv.addRow({
-      name: String(x.name || ''), phone: String(x.phone || ''), floor: x.floor, room: String(x.room || ''), bed: x.bed,
+      name: String(x.name || ''), phone: String(x.phone || ''), floor: x.floor, room: String(x.room || ''),
       joined: utcDate(x.joined), left: utcDate(x.left), adv: Number(x.advance) || 0, ref: Number(x.advance) ? (x.refunded ? 'Yes' : 'No') : '',
     });
     row.getCell('phone').numFmt = '@';
